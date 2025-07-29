@@ -4,8 +4,8 @@
 //  |
 /// !-----------------------------------------------------------------------------------------------------------
 
-const canRequire = typeof(require) == 'function'
-if (typeof(fetch) !== 'function' && canRequire) var fetch = require('node-fetch')
+const canRequire = typeof (require) == 'function'
+if (typeof (fetch) !== 'function' && canRequire) var fetch = require('node-fetch')
 const md5 = require('md5')
 const sha256 = require('js-sha256').sha256
 const sha512256 = require('js-sha512').sha512_256
@@ -13,7 +13,7 @@ const base64 = require('base-64')
 
 const supported_algorithms = ['MD5', 'MD5-sess', 'SHA-256', 'SHA-256-sess', 'SHA-512-256', 'SHA-512-256-sess']
 
-const parse = (raw, field, trim=true) => {
+const parse = (raw, field, trim = true) => {
   const regex = new RegExp(`${field}=("[^"]*"|[^,]*)`, "i")
   const match = regex.exec(raw)
   if (match)
@@ -22,7 +22,7 @@ const parse = (raw, field, trim=true) => {
 }
 
 class DigestClient {
-  constructor(user, password, options={}) {
+  constructor(user, password, options = {}) {
     this.user = user
     this.hashFunc = md5;
     this.password = password
@@ -45,13 +45,26 @@ class DigestClient {
     const _cnonceSize = parseInt(options.cnonceSize)
     this.cnonceSize = isNaN(_cnonceSize) ? 32 : _cnonceSize // cnonce length 32 as default
 
+    // Custom fetch implementation
+    this.overriddenClient = options.client;
+
     // Custom authentication failure code for avoiding browser prompt:
     // https://stackoverflow.com/questions/9859627/how-to-prevent-browser-to-invoke-basic-auth-popup-and-handle-401-error-using-jqu
     this.statusCode = options.statusCode
     this.basic = options.basic || false
   }
 
-  async fetch (url, options={}) {
+  getClient() {
+    if (this.overriddenClient) {
+      return this.overriddenClient;
+    }
+
+    return fetch;
+  }
+
+  async fetch(url, options = {}) {
+    const fetch = this.getClient();
+
     if (this.basic) return fetch(url, this.addBasicAuth(options))
     const resp = await fetch(url, this.addAuth(url, options))
     if (resp.status == 401 || (resp.status == this.statusCode && this.statusCode)) {
@@ -70,9 +83,9 @@ class DigestClient {
     return resp
   }
 
-  addBasicAuth (options={}) {
+  addBasicAuth(options = {}) {
     let _options = {}
-    if (typeof(options.factory) == 'function') {
+    if (typeof (options.factory) == 'function') {
       _options = options.factory()
     } else {
       _options = options
@@ -81,7 +94,7 @@ class DigestClient {
     const auth = 'Basic ' + base64.encode(this.user + ":" + this.password)
     _options.headers = _options.headers || {}
     _options.headers.Authorization = auth;
-    if (typeof(_options.headers.set) == 'function') {
+    if (typeof (_options.headers.set) == 'function') {
       _options.headers.set('Authorization', auth)
     }
 
@@ -97,12 +110,12 @@ class DigestClient {
     return this.hashFunc(data)
   }
 
-  addAuth (url, options) {
-    if (typeof(options.factory) == 'function') options = options.factory()
+  addAuth(url, options) {
+    if (typeof (options.factory) == 'function') options = options.factory()
     if (!this.hasAuth) return options
     if (this.logger) this.logger.info(`requesting with auth carried`)
 
-    const isRequest = typeof(url) === 'object' && typeof(url.url) === 'string'
+    const isRequest = typeof (url) === 'object' && typeof (url.url) === 'string'
     const urlStr = isRequest ? url.url : url
     const _url = urlStr.replace('//', '')
     const uri = _url.indexOf('/') == -1 ? '/' : _url.slice(_url.indexOf('/'))
@@ -114,7 +127,7 @@ class DigestClient {
     }
 
     // optional Hash(entityBody) for 'auth-int'
-    let _ha2 = '' 
+    let _ha2 = ''
     if (this.digest.qop === 'auth-int') {
       // not implemented for auth-int
       if (this.logger) this.logger.warn('Sorry, auth-int is not implemented in this plugin')
@@ -123,7 +136,7 @@ class DigestClient {
     }
     const ha2 = this.hashWithAlgorithm(`${method}:${uri}${_ha2}`);
 
-    const ncString = ('00000000'+this.digest.nc).slice(-8)
+    const ncString = ('00000000' + this.digest.nc).slice(-8)
 
     let _response = `${ha1}:${this.digest.nonce}:${ncString}:${this.digest.cnonce}:${this.digest.qop}:${ha2}`
     if (!this.digest.qop) _response = `${ha1}:${this.digest.nonce}:${ha2}`
@@ -136,7 +149,7 @@ nonce="${this.digest.nonce}",uri="${uri}",${opaqueString}${qopString}\
 algorithm=${this.digest.algorithm},response="${response}",nc=${ncString},cnonce="${this.digest.cnonce}"`
     options.headers = options.headers || {}
     options.headers.Authorization = digest
-    if (typeof(options.headers.set) == 'function') {
+    if (typeof (options.headers.set) == 'function') {
       options.headers.set('Authorization', digest)
     }
 
@@ -149,7 +162,7 @@ algorithm=${this.digest.algorithm},response="${response}",nc=${ncString},cnonce=
     return _options;
   }
 
-  parseAuth (h) {
+  parseAuth(h) {
     this.lastAuth = h
 
     if (!h || h.length < 5) {
@@ -158,7 +171,7 @@ algorithm=${this.digest.algorithm},response="${response}",nc=${ncString},cnonce=
     }
 
     this.hasAuth = true
-    
+
     this.digest.scheme = h.split(/\s/)[0]
 
     this.digest.realm = (parse(h, 'realm', false) || '').replace(/["]/g, '')
@@ -166,14 +179,14 @@ algorithm=${this.digest.algorithm},response="${response}",nc=${ncString},cnonce=
     this.digest.qop = this.parseQop(h)
 
     this.digest.opaque = parse(h, 'opaque')
-    
+
     this.digest.nonce = parse(h, 'nonce') || ''
 
     this.digest.cnonce = this.makeNonce()
     this.digest.nc++
   }
 
-  parseQop (rawAuth) {
+  parseQop(rawAuth) {
     // Following https://en.wikipedia.org/wiki/Digest_access_authentication
     // to parse valid qop
     // Samples 
@@ -190,7 +203,7 @@ algorithm=${this.digest.algorithm},response="${response}",nc=${ncString},cnonce=
     return null
   }
 
-  makeNonce () {
+  makeNonce() {
     let uid = ''
     for (let i = 0; i < this.cnonceSize; ++i) {
       uid += this.nonceRaw[Math.floor(Math.random() * this.nonceRaw.length)];
@@ -203,5 +216,5 @@ algorithm=${this.digest.algorithm},response="${response}",nc=${ncString},cnonce=
   }
 }
 
-if (typeof(window) === "object") window.DigestFetch = DigestClient
+if (typeof (window) === "object") window.DigestFetch = DigestClient
 module.exports = DigestClient
